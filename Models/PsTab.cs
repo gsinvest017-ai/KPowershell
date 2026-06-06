@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using PsTabGroups.Services;
 
 namespace PsTabGroups.Models;
@@ -12,8 +13,31 @@ public partial class PsTab : ObservableObject, IDisposable
 
     [ObservableProperty] string title = "pwsh";
     [ObservableProperty] bool isActive;
+    [ObservableProperty] bool isEditing;
+    [ObservableProperty] string editingName = "";
 
     public ConPtyService? Pty { get; set; }
+
+    [RelayCommand]
+    public void StartRename()
+    {
+        EditingName = Title;
+        IsEditing   = true;
+    }
+
+    [RelayCommand]
+    public void ConfirmRename()
+    {
+        if (!string.IsNullOrWhiteSpace(EditingName))
+            Title = EditingName.Trim();
+        IsEditing = false;
+    }
+
+    [RelayCommand]
+    public void CancelRename()
+    {
+        IsEditing = false;
+    }
 
     public void Dispose()
     {

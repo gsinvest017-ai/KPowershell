@@ -6,6 +6,7 @@
     <Application.Resources>
         <conv:BoolToArrowConverter          x:Key="BoolToArrow"/>
         <conv:InvertBoolVisibilityConverter x:Key="InvertBoolVis"/>
+        <conv:BoolToVisibilityConverter     x:Key="BoolToVis"/>
         <conv:BoolToTabBackgroundConverter  x:Key="BoolToTabBg"/>
         <conv:HexColorConverter             x:Key="HexColor"/>
     </Application.Resources>
