@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -22,6 +23,11 @@ public partial class MainWindow : Window
         _vm = new MainViewModel();
         DataContext = _vm;
         _vm.PropertyChanged += OnVmPropertyChanged;
+
+        // 訂閱 tab 關閉事件，用於清理 JS 端的 xterm 實例
+        _vm.Groups.CollectionChanged += OnGroupsChanged;
+        foreach (var g in _vm.Groups) g.Tabs.CollectionChanged += OnTabsChanged;
+
         Loaded  += OnLoaded;
         Closing += OnClosing;
     }
@@ -40,13 +46,9 @@ public partial class MainWindow : Window
         coreWv.Settings.AreDefaultContextMenusEnabled    = false;
         coreWv.Settings.IsStatusBarEnabled               = false;
         coreWv.Settings.AreBrowserAcceleratorKeysEnabled = false;
-        coreWv.WebMessageReceived    += OnWebMessageReceived;
-        coreWv.NavigationCompleted   += OnNavigationCompleted;
+        coreWv.WebMessageReceived += OnWebMessageReceived;
         coreWv.Navigate("https://app.local/terminal.html");
     }
-
-    private void OnNavigationCompleted(object? sender,
-        CoreWebView2NavigationCompletedEventArgs e) { }
 
     // ─────────────────────────────────────────────────────────────
     // WebView2 ↔ C# 訊息橋
@@ -67,14 +69,35 @@ public partial class MainWindow : Window
                 _webReady = true;
                 Dispatcher.Invoke(InitFirstTab);
                 break;
+
             case "input":
                 if (msg.id is not null && msg.data is not null)
-                    FindTab(msg.id)?.Pty?.WriteInput(msg.data);
+                {
+                    FindPty(msg.id)?.WriteInput(msg.data);
+                    // 記錄哪個 pane 目前有輸入焦點
+                    var inputTab = FindTabContaining(msg.id);
+                    if (inputTab is not null) inputTab.ActivePaneId = msg.id;
+                }
                 break;
+
             case "resize":
                 if (msg.id is not null && msg.cols > 0 && msg.rows > 0)
-                    FindTab(msg.id)?.Pty?.Resize((short)msg.cols, (short)msg.rows);
+                    FindPty(msg.id)?.Resize((short)msg.cols, (short)msg.rows);
                 break;
+
+            case "paneactive":
+                // 使用者點擊分割窗格 → 更新 ActivePaneId
+                if (msg.id is not null)
+                {
+                    var tab = FindTabContaining(msg.id);
+                    if (tab is not null) tab.ActivePaneId = msg.id;
+                }
+                break;
+
+            case "hotkey":
+                Dispatcher.Invoke(() => HandleHotkey(msg.key));
+                break;
+
             case "jserr":
                 Dispatcher.Invoke(() =>
                     MessageBox.Show($"JS Error: {msg.msg}\n{msg.src}:{msg.line}",
@@ -117,6 +140,62 @@ public partial class MainWindow : Window
         tab.Pty = pty;
     }
 
+    private void SpawnSplitPane(PsTab tab)
+    {
+        if (!_webReady || tab.SplitPaneId is null) return;
+        var paneId = tab.SplitPaneId;
+
+        PostJs(new { type = "split", existingId = tab.Id, newId = paneId,
+                     direction = tab.SplitDir.ToString().ToLower() });
+
+        var pty = new ConPtyService();
+        pty.OutputReceived += b64 =>
+            Dispatcher.InvokeAsync(() =>
+                TerminalWebView.CoreWebView2?.ExecuteScriptAsync(
+                    $"writeToTerminal('{EscJs(paneId)}', '{b64}');"));
+
+        try { pty.Start(); }
+        catch (Exception ex)
+        {
+            PostJs(new { type = "write", id = paneId,
+                data = Convert.ToBase64String(
+                    System.Text.Encoding.UTF8.GetBytes(
+                        $"\r\n\x1b[31mFailed to start shell: {ex.Message}\x1b[0m\r\n")) });
+            return;
+        }
+        tab.SplitPty = pty;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Split pane 快捷鍵處理
+    // ─────────────────────────────────────────────────────────────
+
+    private void HandleHotkey(string? key)
+    {
+        switch (key)
+        {
+            case "splitVertical":   SplitActive(SplitDirection.Vertical);   break;
+            case "splitHorizontal": SplitActive(SplitDirection.Horizontal); break;
+            case "closeSplitPane":  CloseSplitPane();                       break;
+        }
+    }
+
+    private void SplitActive(SplitDirection dir)
+    {
+        var tab = _vm.ActiveTab;
+        if (tab is null || tab.IsSplit) return;
+        tab.OpenSplit(dir);
+        SpawnSplitPane(tab);
+    }
+
+    private void CloseSplitPane()
+    {
+        var tab = _vm.ActiveTab;
+        if (tab is null || !tab.IsSplit) return;
+        PostJs(new { type = "closepane", paneId = tab.SplitPaneId!, keepId = tab.Id });
+        tab.CloseSplit();
+    }
+
     // ─────────────────────────────────────────────────────────────
     // ViewModel → ActiveTab 切換
     // ─────────────────────────────────────────────────────────────
@@ -128,19 +207,49 @@ public partial class MainWindow : Window
         var tab = _vm.ActiveTab;
         if (tab is null || !_webReady) return;
         if (tab.Pty is null) SpawnTerminal(tab);
-        else PostJs(new { type = "switch", id = tab.Id });
+        else PostSwitchLayout(tab);
+    }
+
+    private void PostSwitchLayout(PsTab tab)
+    {
+        object panes = tab.IsSplit
+            ? new[] { tab.Id, tab.SplitPaneId! }
+            : new[] { tab.Id };
+        PostJs(new { type = "switch", id = tab.Id, panes,
+                     direction = tab.SplitDir.ToString().ToLower() });
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Rename TextBox event handlers (掛在 Style EventSetter)
+    // Tab 關閉清理（移除 JS 端 xterm 實例）
     // ─────────────────────────────────────────────────────────────
 
-    /// <summary>TextBox 變為可見時自動 focus 並全選。</summary>
+    private void OnGroupsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems is not null)
+            foreach (TabGroup g in e.NewItems) g.Tabs.CollectionChanged += OnTabsChanged;
+        if (e.OldItems is not null)
+            foreach (TabGroup g in e.OldItems) g.Tabs.CollectionChanged -= OnTabsChanged;
+    }
+
+    private void OnTabsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (!_webReady || e.OldItems is null) return;
+        foreach (PsTab tab in e.OldItems)
+        {
+            PostJs(new { type = "remove", id = tab.Id });
+            if (tab.SplitPaneId is not null)
+                PostJs(new { type = "remove", id = tab.SplitPaneId });
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Rename TextBox event handlers
+    // ─────────────────────────────────────────────────────────────
+
     private void RenameBox_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (sender is TextBox tb && (bool)e.NewValue)
         {
-            // BeginInvoke 確保 layout 完成後才操作 focus
             Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
             {
                 tb.Focus();
@@ -149,7 +258,6 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Enter/Tab → 確認；Esc → 取消。</summary>
     private void RenameBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (sender is not TextBox tb) return;
@@ -167,7 +275,6 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>點到其他地方（LostFocus）→ 確認。</summary>
     private void RenameBox_LostFocus(object sender, RoutedEventArgs e)
     {
         if (sender is TextBox tb) CommitRename(tb);
@@ -238,8 +345,24 @@ public partial class MainWindow : Window
     private void PostJs(object payload) =>
         TerminalWebView.CoreWebView2?.PostWebMessageAsString(JsonSerializer.Serialize(payload));
 
+    /// <summary>依照 terminal ID 找到對應的 ConPtyService（含分割窗格）。</summary>
+    private ConPtyService? FindPty(string id)
+    {
+        foreach (var g in _vm.Groups)
+        foreach (var tab in g.Tabs)
+        {
+            if (tab.Id          == id) return tab.Pty;
+            if (tab.SplitPaneId == id) return tab.SplitPty;
+        }
+        return null;
+    }
+
     private PsTab? FindTab(string id) =>
         _vm.Groups.SelectMany(g => g.Tabs).FirstOrDefault(t => t.Id == id);
+
+    private PsTab? FindTabContaining(string id) =>
+        _vm.Groups.SelectMany(g => g.Tabs)
+           .FirstOrDefault(t => t.Id == id || t.SplitPaneId == id);
 
     private static string EscJs(string s) =>
         s.Replace("'", "\\'").Replace("\\", "\\\\");
@@ -259,6 +382,7 @@ file class TerminalMessage
     public string? data { get; set; }
     public string? msg  { get; set; }
     public string? src  { get; set; }
+    public string? key  { get; set; }   // hotkey: splitVertical / splitHorizontal / closeSplitPane
     public int     line { get; set; }
     public int     cols { get; set; }
     public int     rows { get; set; }
