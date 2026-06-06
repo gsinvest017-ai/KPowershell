@@ -8,6 +8,32 @@
         WindowStyle="SingleBorderWindow">
 
     <Window.Resources>
+        <!-- Color swatch circle button -->
+        <Style x:Key="ColorSwatchStyle" TargetType="Button">
+            <Setter Property="Width"            Value="24"/>
+            <Setter Property="Height"           Value="24"/>
+            <Setter Property="Margin"           Value="3"/>
+            <Setter Property="BorderThickness"  Value="0"/>
+            <Setter Property="Cursor"           Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="Transparent"
+                                BorderThickness="2"
+                                CornerRadius="12"/>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Header button -->
         <Style x:Key="HeaderButtonStyle" TargetType="Button">
             <Setter Property="Background"      Value="Transparent"/>
@@ -77,7 +103,8 @@
                                     <!-- ── Group Label ─────────────────────────── -->
                                     <Border Background="{Binding ColorHex, Converter={StaticResource HexColor}}"
                                             CornerRadius="4,4,0,0" Padding="6,3" Margin="2,5,0,0"
-                                            VerticalAlignment="Bottom">
+                                            VerticalAlignment="Bottom"
+                                            MouseRightButtonUp="GroupLabel_RightClick">
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
 
                                             <!-- Name: display mode (雙擊 → rename) -->
@@ -122,13 +149,12 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="{x:Type models:PsTab}">
                                                 <Border Background="{Binding IsActive, Converter={StaticResource BoolToTabBg}}"
-                                                        BorderBrush="{Binding DataContext.ColorHex,
-                                                            RelativeSource={RelativeSource AncestorType=ItemsControl},
-                                                            Converter={StaticResource HexColor}}"
+                                                        BorderBrush="{Binding ColorHex, Converter={StaticResource HexColor}}"
                                                         BorderThickness="1,2,1,0"
                                                         CornerRadius="4,4,0,0"
                                                         Padding="10,3" Margin="1,5,0,0"
-                                                        Cursor="Hand" VerticalAlignment="Bottom">
+                                                        Cursor="Hand" VerticalAlignment="Bottom"
+                                                        MouseRightButtonUp="TabBorder_RightClick">
                                                     <Border.InputBindings>
                                                         <MouseBinding MouseAction="LeftClick"
                                                                       Command="{Binding DataContext.ActivateTabCommand,
@@ -197,5 +223,34 @@
         <wv2:WebView2 x:Name="TerminalWebView"
                       Grid.Row="1"
                       DefaultBackgroundColor="#1A1A1A"/>
+
+        <!-- ═══ Color Picker Popup ═══ -->
+        <Popup x:Name="ColorPickerPopup"
+               StaysOpen="False" AllowsTransparency="True"
+               Placement="Bottom" HorizontalOffset="-4" VerticalOffset="4">
+            <Border Background="#252525" BorderBrush="#555" BorderThickness="1"
+                    CornerRadius="7" Padding="10,8">
+                <Border.Effect>
+                    <DropShadowEffect Color="Black" BlurRadius="14" Opacity="0.55" ShadowDepth="2"/>
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="顏色" FontSize="10" Foreground="#888" Margin="0,0,0,7"/>
+                    <UniformGrid Columns="6">
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#C50F1F" Tag="#C50F1F" Click="ColorSwatch_Click"/>
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#FF6B35" Tag="#FF6B35" Click="ColorSwatch_Click"/>
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#E8CB2D" Tag="#E8CB2D" Click="ColorSwatch_Click"/>
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#16C60C" Tag="#16C60C" Click="ColorSwatch_Click"/>
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#00B7C3" Tag="#00B7C3" Click="ColorSwatch_Click"/>
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#4ECDC4" Tag="#4ECDC4" Click="ColorSwatch_Click"/>
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#3B78FF" Tag="#3B78FF" Click="ColorSwatch_Click"/>
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#881798" Tag="#881798" Click="ColorSwatch_Click"/>
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#A78BFA" Tag="#A78BFA" Click="ColorSwatch_Click"/>
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#E74856" Tag="#E74856" Click="ColorSwatch_Click"/>
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#767676" Tag="#767676" Click="ColorSwatch_Click"/>
+                        <Button Style="{StaticResource ColorSwatchStyle}" Background="#DEDEDE" Tag="#DEDEDE" Click="ColorSwatch_Click"/>
+                    </UniformGrid>
+                </StackPanel>
+            </Border>
+        </Popup>
     </Grid>
 </Window>

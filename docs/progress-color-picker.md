@@ -15,13 +15,24 @@
 ---
 
 ## M1 — Model 層擴充
-<!-- 待補 commit hash -->
+commit 74bc961
+
+- `PsTab` 新增 `ColorHex` ObservableProperty（預設 #4ECDC4）
+- `PsTab` / `TabGroup` 新增 `ChangeColor(hex)` 方法
+- `MainViewModel.AddTabToGroup` 建立 tab 時帶入 `group.ColorHex`
 
 ## M2 — UI Popup 色盤
-<!-- 待補 commit hash -->
+commit M2 hash（見 git log）
+
+- `MainWindow.xaml`: 新增 `ColorSwatchStyle`（圓形 24px 色塊 + hover 白框）
+- `Popup x:Name="ColorPickerPopup"`：12 色調色盤，StaysOpen=False，Bottom 定位
+- Group 標籤 Border：`MouseRightButtonUp="GroupLabel_RightClick"`
+- Tab Border：`BorderBrush` 改綁 `PsTab.ColorHex`，加 `MouseRightButtonUp="TabBorder_RightClick"`
+- `MainWindow.xaml.cs`: `_applyColor` Action，`ShowColorPicker` / `ColorSwatch_Click`
 
 ## M3 — Build & Deploy
-<!-- 待補 commit hash -->
+- `dotnet publish -c Release` → `publish/`
+- 複製到 `AppData\Local\PsTabGroups\`，KPowershell.exe 已更新
 
 ---
 

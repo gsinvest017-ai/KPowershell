@@ -14,6 +14,7 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
     private bool _webReady;
+    private Action<string>? _applyColor;
 
     public MainWindow()
     {
@@ -188,6 +189,46 @@ public partial class MainWindow : Window
             case TabGroup g: g.CancelRenameCommand.Execute(null); break;
             case PsTab   t:  t.CancelRenameCommand.Execute(null); break;
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Color picker
+    // ─────────────────────────────────────────────────────────────
+
+    private void GroupLabel_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is TabGroup g)
+        {
+            _applyColor = hex => g.ChangeColor(hex);
+            ShowColorPicker(fe);
+            e.Handled = true;
+        }
+    }
+
+    private void TabBorder_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is PsTab t)
+        {
+            _applyColor = hex => t.ChangeColor(hex);
+            ShowColorPicker(fe);
+            e.Handled = true;
+        }
+    }
+
+    private void ShowColorPicker(FrameworkElement target)
+    {
+        ColorPickerPopup.PlacementTarget = target;
+        ColorPickerPopup.IsOpen = true;
+    }
+
+    private void ColorSwatch_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string hex)
+        {
+            _applyColor?.Invoke(hex);
+            _applyColor = null;
+        }
+        ColorPickerPopup.IsOpen = false;
     }
 
     // ─────────────────────────────────────────────────────────────
