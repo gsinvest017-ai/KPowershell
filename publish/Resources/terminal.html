@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PsTabGroups Terminal</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"/>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #1a1a1a;
+    overflow: hidden;
+  }
+  #wrap {
+    width: 100%; height: 100%;
+    position: relative;
+  }
+  .term-host {
+    position: absolute;
+    inset: 0;
+    display: none;
+  }
+  .term-host.active {
+    display: block;
+  }
+  .xterm { width: 100%; height: 100%; }
+  .xterm-viewport { overflow-y: hidden !important; }
+</style>
+</head>
+<body>
+<div id="wrap"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<script>
+'use strict';
+
+const terms   = {};   // id -> { term, fit, host }
+let   activeId = null;
+
+const THEME = {
+  background:       '#1a1a1a',
+  foreground:       '#d4d4d4',
+  cursor:           '#d4a017',
+  cursorAccent:     '#1a1a1a',
+  selectionBackground: 'rgba(212,160,23,0.3)',
+  black:   '#1a1a1a', brightBlack:   '#555555',
+  red:     '#f44747', brightRed:     '#f44747',
+  green:   '#6a9955', brightGreen:   '#b5cea8',
+  yellow:  '#d7ba7d', brightYellow:  '#d7ba7d',
+  blue:    '#569cd6', brightBlue:    '#9cdcfe',
+  magenta: '#c586c0', brightMagenta: '#c586c0',
+  cyan:    '#4ec9b0', brightCyan:    '#4ec9b0',
+  white:   '#d4d4d4', brightWhite:   '#ffffff',
+};
+
+function createTerminal(id) {
+  if (terms[id]) return;
+
+  const host = document.createElement('div');
+  host.className = 'term-host';
+  host.id = 'host-' + id;
+  document.getElementById('wrap').appendChild(host);
+
+  const term = new Terminal({
+    theme: THEME,
+    fontFamily: '"Cascadia Code", "JetBrains Mono", "Consolas", monospace',
+    fontSize: 14,
+    lineHeight: 1.2,
+    cursorBlink: true,
+    cursorStyle: 'block',
+    allowTransparency: false,
+    scrollback: 5000,
+  });
+
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(host);
+  fit.fit();
+
+  term.onData(data => {
+    window.chrome.webview.postMessage(JSON.stringify({ type: 'input', id, data }));
+  });
+
+  term.onResize(({ cols, rows }) => {
+    window.chrome.webview.postMessage(JSON.stringify({ type: 'resize', id, cols, rows }));
+  });
+
+  terms[id] = { term, fit, host };
+  switchTerminal(id);
+}
+
+function switchTerminal(id) {
+  if (activeId && terms[activeId]) {
+    terms[activeId].host.classList.remove('active');
+  }
+  activeId = id;
+  if (terms[id]) {
+    terms[id].host.classList.add('active');
+    terms[id].fit.fit();
+    terms[id].term.focus();
+  }
+}
+
+function writeToTerminal(id, b64) {
+  if (!terms[id]) return;
+  // decode base64 to binary string, then to Uint8Array
+  const binary = atob(b64);
+  const bytes  = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  terms[id].term.write(bytes);
+}
+
+function removeTerminal(id) {
+  if (!terms[id]) return;
+  terms[id].term.dispose();
+  terms[id].host.remove();
+  delete terms[id];
+  if (activeId === id) {
+    activeId = null;
+    const ids = Object.keys(terms);
+    if (ids.length) switchTerminal(ids[ids.length - 1]);
+  }
+}
+
+// Receive commands from C# via WebView2.PostWebMessageAsString
+window.chrome.webview.addEventListener('message', ev => {
+  let msg;
+  try { msg = JSON.parse(ev.data); } catch { return; }
+  switch (msg.type) {
+    case 'create': createTerminal(msg.id);        break;
+    case 'switch': switchTerminal(msg.id);        break;
+    case 'write':  writeToTerminal(msg.id, msg.data); break;
+    case 'remove': removeTerminal(msg.id);        break;
+  }
+});
+
+// Notify C# that the page is ready
+window.chrome.webview.postMessage(JSON.stringify({ type: 'ready' }));
+
+// Resize all active terminals when window resizes
+window.addEventListener('resize', () => {
+  if (activeId && terms[activeId]) terms[activeId].fit.fit();
+});
+</script>
+</body>
+</html>
