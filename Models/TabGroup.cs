@@ -38,6 +38,8 @@ public partial class TabGroup : ObservableObject
         IsEditing = false;
     }
 
+    public void ChangeColor(string hex) => ColorHex = hex;
+
     public string CollapseArrow => IsCollapsed ? "▶" : "▼";
 
     partial void OnIsCollapsedChanged(bool value)

@@ -44,7 +44,7 @@ public partial class MainViewModel : ObservableObject
         // 停用目前 active tab
         if (ActiveTab is not null) ActiveTab.IsActive = false;
 
-        var tab = new PsTab { Title = "pwsh", GroupName = group.Name };
+        var tab = new PsTab { Title = "pwsh", GroupName = group.Name, ColorHex = group.ColorHex };
         group.Tabs.Add(tab);
         tab.IsActive = true;
         ActiveTab = tab;

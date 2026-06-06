@@ -15,6 +15,7 @@ public partial class PsTab : ObservableObject, IDisposable
     [ObservableProperty] bool isActive;
     [ObservableProperty] bool isEditing;
     [ObservableProperty] string editingName = "";
+    [ObservableProperty] string colorHex = "#4ECDC4";
 
     public ConPtyService? Pty { get; set; }
 
@@ -38,6 +39,8 @@ public partial class PsTab : ObservableObject, IDisposable
     {
         IsEditing = false;
     }
+
+    public void ChangeColor(string hex) => ColorHex = hex;
 
     public void Dispose()
     {
