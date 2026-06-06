@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Background -->
+  <rect width="100" height="100" rx="18" fill="#141414"/>
+
+  <!-- Tab group bars (top) — three coloured tabs mimicking Chrome tab groups -->
+  <rect x="7"  y="7"  width="26" height="7" rx="3.5" fill="#4ECDC4"/>
+  <rect x="37" y="7"  width="22" height="7" rx="3.5" fill="#FF6B35"/>
+  <rect x="63" y="7"  width="14" height="7" rx="3.5" fill="#A78BFA"/>
+
+  <!-- Thin separator under tabs -->
+  <rect x="7" y="18" width="86" height="1.5" rx="0.75" fill="#2a2a2a"/>
+
+  <!-- Large K in gold -->
+  <text x="7" y="75"
+        font-family="'Segoe UI', 'Arial Black', sans-serif"
+        font-size="60" font-weight="900"
+        fill="#d4a017" letter-spacing="-2">K</text>
+
+  <!-- PowerShell prompt ">" — smaller, bottom-right, slightly dimmer -->
+  <text x="58" y="91"
+        font-family="'Cascadia Code', 'Consolas', monospace"
+        font-size="26" font-weight="700"
+        fill="#c87d0e" opacity="0.9">&gt;_</text>
+</svg>

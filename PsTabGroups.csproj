@@ -6,9 +6,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-<AllowUnsafeBlocks>false</AllowUnsafeBlocks>
-    <AssemblyName>PsTabGroups</AssemblyName>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <AssemblyName>KPowershell</AssemblyName>
+    <Product>KPowershell</Product>
     <RootNamespace>PsTabGroups</RootNamespace>
+    <ApplicationIcon>Resources\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,9 +18,12 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
   </ItemGroup>
 
-  <!-- terminal.html 複製到 output/Resources/ -->
+  <!-- Resources 複製到 output/Resources/ -->
   <ItemGroup>
     <Content Include="Resources\terminal.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\icon.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
