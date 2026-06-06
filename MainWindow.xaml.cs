@@ -100,6 +100,16 @@ public partial class MainWindow : Window
                     tab?.Pty?.Resize((short)msg.cols, (short)msg.rows);
                 }
                 break;
+
+            case "jserr":
+                // JS 錯誤上報：彈 MessageBox 方便 debug
+                Dispatcher.Invoke(() =>
+                    System.Windows.MessageBox.Show(
+                        $"JS Error: {msg.msg}\n{msg.src}:{msg.line}",
+                        "KPowershell – JS Error",
+                        System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Warning));
+                break;
         }
     }
 
@@ -192,6 +202,9 @@ file class TerminalMessage
     public string? type { get; set; }
     public string? id   { get; set; }
     public string? data { get; set; }
+    public string? msg  { get; set; }
+    public string? src  { get; set; }
+    public int     line { get; set; }
     public int     cols { get; set; }
     public int     rows { get; set; }
 }

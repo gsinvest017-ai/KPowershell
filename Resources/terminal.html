@@ -33,10 +33,16 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
-<!-- unicode11 addon：修正 Nerd Font / Oh My Posh glyph 寬度計算 -->
-<script src="https://cdn.jsdelivr.net/npm/xterm-addon-unicode11@0.8.0/lib/xterm-addon-unicode11.js"></script>
 <script>
 'use strict';
+
+// ── 全域 JS 錯誤上報給 C# (方便 debug) ──────────────────────────
+window.onerror = (msg, src, line) => {
+  try { window.chrome.webview.postMessage(JSON.stringify({ type: 'jserr', msg: String(msg), src, line })); } catch {}
+};
+window.onunhandledrejection = ev => {
+  try { window.chrome.webview.postMessage(JSON.stringify({ type: 'jserr', msg: String(ev.reason) })); } catch {}
+};
 
 const terms   = {};
 let   activeId = null;
@@ -68,22 +74,28 @@ function createTerminal(id) {
   const term = new Terminal({
     theme: THEME,
     // CaskaydiaCove NF 包含完整 Nerd Font glyph（系統已安裝）
-    fontFamily: '"CaskaydiaCove NF", "CaskaydiaCove NFM", "Cascadia Code NF", "MesloLGS NF", "Cascadia Code", "Consolas", monospace',
+    fontFamily: '"CaskaydiaCove NF", "CaskaydiaCove NFM", "Cascadia Code", "Consolas", monospace',
     fontSize: 14,
     lineHeight: 1.2,
     cursorBlink: true,
     cursorStyle: 'block',
     allowTransparency: false,
     scrollback: 5000,
-    // 允許 xterm.js 在 macOS/Windows 上使用平台 IME
-    macOptionIsMeta: false,
   });
 
-  // ── unicode11 addon：讓 xterm.js 用 Unicode 11 寬度表
-  //    正確處理 Nerd Font private-use-area glyph（E000–F8FF）為 1 cell
-  const unicode11 = new Unicode11Addon.Unicode11Addon();
-  term.loadAddon(unicode11);
-  term.unicode.activeVersion = '11';
+  // unicode11 addon — Nerd Font glyph 寬度修正（失敗時安全降級）
+  try {
+    const u11Script = document.createElement('script');
+    u11Script.src = 'https://cdn.jsdelivr.net/npm/xterm-addon-unicode11@0.8.0/lib/xterm-addon-unicode11.js';
+    u11Script.onload = () => {
+      try {
+        const u11 = new Unicode11Addon.Unicode11Addon();
+        term.loadAddon(u11);
+        term.unicode.activeVersion = '11';
+      } catch(e) {}
+    };
+    document.head.appendChild(u11Script);
+  } catch(e) {}
 
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
