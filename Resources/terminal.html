@@ -8,11 +8,19 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 100%; height: 100%; background: #1a1a1a; overflow: hidden; }
-  #wrap { width: 100%; height: 100%; position: relative; }
-  .term-host { position: absolute; inset: 0; display: none; }
-  .term-host.active { display: block; }
+  #wrap { display: flex; width: 100%; height: 100%; }
+  .term-host {
+    display: none; flex-direction: column;
+    min-width: 0; min-height: 0; overflow: hidden;
+  }
+  .term-host.vis { display: flex; flex: 1; }
+  .term-host.focus-pane { outline: 1px solid #4a4a4a; outline-offset: -1px; }
   .xterm { width: 100%; height: 100%; }
   .xterm-viewport { overflow-y: hidden !important; }
+  .split-bar { flex-shrink: 0; background: #2a2a2a; transition: background 0.15s; }
+  .split-bar.vert  { width: 4px; cursor: col-resize; }
+  .split-bar.horiz { height: 4px; cursor: row-resize; }
+  .split-bar:hover, .split-bar.dragging { background: #555; }
 </style>
 </head>
 <body>
@@ -29,8 +37,8 @@ window.onerror = (msg, src, line) => {
 };
 
 const terms   = {};
-let   activeId = null;
-let   _u11Loaded = false;   // unicode11 addon 是否已就緒
+let _u11Loaded  = false;
+let _layoutPanes = [];   // 目前可見的 pane ID 陣列
 
 const THEME = {
   background:'#1a1a1a', foreground:'#d4d4d4',
@@ -46,22 +54,36 @@ const THEME = {
   white:'#d4d4d4',   brightWhite:'#ffffff',
 };
 
-// ── 在頁面啟動時立即載入 unicode11 ──────────────────────────────
-// ready 訊號等 unicode11 成功或失敗後才發，確保第一批 prompt 輸出
-// 時寬度表已就緒，避免 Oh My Posh / Nerd Font glyph 造成游標偏移。
+// ── Unicode11: Nerd Font 寬度修正（必須在第一批輸出前就緒）───────
 (function loadUnicode11() {
-  const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/xterm-addon-unicode11@0.8.0/lib/xterm-addon-unicode11.js';
-  script.onload  = () => { _u11Loaded = true;  sendReady(); };
-  script.onerror = () => { _u11Loaded = false; sendReady(); }; // 降級：沒有 addon 也能跑
-  document.head.appendChild(script);
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/xterm-addon-unicode11@0.8.0/lib/xterm-addon-unicode11.js';
+  s.onload  = () => { _u11Loaded = true;  sendReady(); };
+  s.onerror = () => { _u11Loaded = false; sendReady(); };
+  document.head.appendChild(s);
 })();
 
 function sendReady() {
   window.chrome.webview.postMessage(JSON.stringify({ type: 'ready' }));
 }
 
-// ─────────────────────────────────────────────────────────────────
+// ── 快捷鍵攔截（capture 優先於 xterm handler）────────────────────
+// Alt+Shift+= → splitVertical, Alt+Shift+- → splitHorizontal, Alt+Shift+W → closeSplitPane
+window.addEventListener('keydown', e => {
+  if (e.altKey && e.shiftKey) {
+    let hk = null;
+    if (e.key === '=' || e.key === '+') hk = 'splitVertical';
+    else if (e.key === '-' || e.key === '_') hk = 'splitHorizontal';
+    else if (e.key === 'W' || e.key === 'w') hk = 'closeSplitPane';
+    if (hk) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      window.chrome.webview.postMessage(JSON.stringify({ type: 'hotkey', key: hk }));
+    }
+  }
+}, true);
+
+// ── Terminal 建立 ─────────────────────────────────────────────────
 
 function createTerminal(id) {
   if (terms[id]) return;
@@ -82,19 +104,17 @@ function createTerminal(id) {
     scrollback: 5000,
   });
 
-  // unicode11: 修正 Nerd Font PUA glyph（E000-F8FF）寬度為 1-cell
   if (_u11Loaded && typeof Unicode11Addon !== 'undefined') {
     try {
       const u11 = new Unicode11Addon.Unicode11Addon();
       term.loadAddon(u11);
       term.unicode.activeVersion = '11';
-    } catch(e) {}
+    } catch(_) {}
   }
 
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(host);
-  fit.fit();
 
   term.onData(data => {
     window.chrome.webview.postMessage(JSON.stringify({ type:'input', id, data }));
@@ -103,19 +123,79 @@ function createTerminal(id) {
     window.chrome.webview.postMessage(JSON.stringify({ type:'resize', id, cols, rows }));
   });
 
+  // 分割模式下：mousedown → 通知 C# 切換焦點窗格
+  host.addEventListener('mousedown', () => {
+    if (_layoutPanes.length < 2) return;
+    _layoutPanes.forEach(pid => terms[pid]?.host.classList.remove('focus-pane'));
+    host.classList.add('focus-pane');
+    window.chrome.webview.postMessage(JSON.stringify({ type: 'paneactive', id }));
+  }, true);
+
   terms[id] = { term, fit, host };
-  switchTerminal(id);
 }
 
-function switchTerminal(id) {
-  if (activeId && terms[activeId]) terms[activeId].host.classList.remove('active');
-  activeId = id;
-  if (terms[id]) {
-    terms[id].host.classList.add('active');
-    terms[id].fit.fit();
-    terms[id].term.focus();
+// ── 佈局管理 ─────────────────────────────────────────────────────
+
+function setLayout(paneIds, direction) {
+  _layoutPanes = paneIds;
+
+  // 隱藏所有 term-host
+  document.querySelectorAll('.term-host').forEach(h => {
+    h.classList.remove('vis', 'focus-pane');
+    h.style.flex = '';
+  });
+  // 移除舊分割條
+  document.querySelectorAll('.split-bar').forEach(b => b.remove());
+
+  const wrap = document.getElementById('wrap');
+  wrap.style.flexDirection = direction === 'horizontal' ? 'column' : 'row';
+
+  if (!paneIds.length) return;
+
+  if (paneIds.length === 1 || direction === 'none') {
+    const t = terms[paneIds[0]];
+    if (t) t.host.classList.add('vis');
+  } else {
+    const t0 = terms[paneIds[0]];
+    const t1 = terms[paneIds[1]];
+    if (t0) t0.host.classList.add('vis', 'focus-pane');
+    if (t1) t1.host.classList.add('vis');
+    if (t0 && t1) t0.host.after(makeBar(direction === 'horizontal', paneIds));
   }
+
+  requestAnimationFrame(fitAll);
 }
+
+function makeBar(isHoriz, paneIds) {
+  const bar = document.createElement('div');
+  bar.className = 'split-bar ' + (isHoriz ? 'horiz' : 'vert');
+
+  let dragging = false;
+  bar.addEventListener('mousedown', e => { dragging = true; bar.classList.add('dragging'); e.preventDefault(); });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const wrap = document.getElementById('wrap');
+    const rect = wrap.getBoundingClientRect();
+    const t0   = terms[paneIds[0]];
+    const t1   = terms[paneIds[1]];
+    if (!t0 || !t1) return;
+    const p = Math.max(0.1, Math.min(0.9,
+      isHoriz ? (e.clientY - rect.top)  / rect.height
+              : (e.clientX - rect.left) / rect.width));
+    t0.host.style.flex = `${p} 1 0%`;
+    t1.host.style.flex = `${1 - p} 1 0%`;
+  });
+  document.addEventListener('mouseup', () => {
+    if (dragging) { dragging = false; bar.classList.remove('dragging'); fitAll(); }
+  });
+  return bar;
+}
+
+function fitAll() {
+  _layoutPanes.forEach(id => { if (terms[id]) terms[id].fit.fit(); });
+}
+
+// ── 資料橋接 ─────────────────────────────────────────────────────
 
 function writeToTerminal(id, b64) {
   if (!terms[id]) return;
@@ -130,29 +210,53 @@ function removeTerminal(id) {
   terms[id].term.dispose();
   terms[id].host.remove();
   delete terms[id];
-  if (activeId === id) {
-    activeId = null;
-    const ids = Object.keys(terms);
-    if (ids.length) switchTerminal(ids[ids.length - 1]);
-  }
+  _layoutPanes = _layoutPanes.filter(p => p !== id);
 }
+
+// ── 訊息處理 ─────────────────────────────────────────────────────
 
 window.chrome.webview.addEventListener('message', ev => {
   let msg;
   try { msg = JSON.parse(ev.data); } catch { return; }
+
   switch (msg.type) {
-    case 'create': createTerminal(msg.id);            break;
-    case 'switch': switchTerminal(msg.id);            break;
-    case 'write':  writeToTerminal(msg.id, msg.data); break;
-    case 'remove': removeTerminal(msg.id);            break;
+    case 'create':
+      // 新 tab 第一次建立
+      createTerminal(msg.id);
+      setLayout([msg.id], 'none');
+      break;
+
+    case 'switch':
+      // 切換 tab（含分割佈局資訊）
+      setLayout(msg.panes || [msg.id], msg.direction || 'none');
+      if (terms[msg.id]) terms[msg.id].term.focus();
+      break;
+
+    case 'write':
+      writeToTerminal(msg.id, msg.data);
+      break;
+
+    case 'remove':
+      removeTerminal(msg.id);
+      break;
+
+    case 'split':
+      // 建立分割窗格
+      createTerminal(msg.newId);
+      setLayout([msg.existingId, msg.newId], msg.direction);
+      if (terms[msg.newId]) terms[msg.newId].term.focus();
+      break;
+
+    case 'closepane':
+      // 關閉分割窗格，回到單窗格
+      removeTerminal(msg.paneId);
+      setLayout([msg.keepId], 'none');
+      if (terms[msg.keepId]) { terms[msg.keepId].term.focus(); }
+      break;
   }
 });
 
-// !! 注意：不在這裡直接送 ready，改由 loadUnicode11() 的 onload/onerror 觸發 !!
-
-window.addEventListener('resize', () => {
-  if (activeId && terms[activeId]) terms[activeId].fit.fit();
-});
+window.addEventListener('resize', fitAll);
 </script>
 </body>
 </html>
