@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PsTabGroups Terminal</title>
+<title>KPowershell Terminal</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"/>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -33,17 +33,19 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<!-- unicode11 addon：修正 Nerd Font / Oh My Posh glyph 寬度計算 -->
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-unicode11@0.8.0/lib/xterm-addon-unicode11.js"></script>
 <script>
 'use strict';
 
-const terms   = {};   // id -> { term, fit, host }
+const terms   = {};
 let   activeId = null;
 
 const THEME = {
-  background:       '#1a1a1a',
-  foreground:       '#d4d4d4',
-  cursor:           '#d4a017',
-  cursorAccent:     '#1a1a1a',
+  background:          '#1a1a1a',
+  foreground:          '#d4d4d4',
+  cursor:              '#d4a017',
+  cursorAccent:        '#1a1a1a',
   selectionBackground: 'rgba(212,160,23,0.3)',
   black:   '#1a1a1a', brightBlack:   '#555555',
   red:     '#f44747', brightRed:     '#f44747',
@@ -65,14 +67,23 @@ function createTerminal(id) {
 
   const term = new Terminal({
     theme: THEME,
-    fontFamily: '"Cascadia Code", "JetBrains Mono", "Consolas", monospace',
+    // CaskaydiaCove NF 包含完整 Nerd Font glyph（系統已安裝）
+    fontFamily: '"CaskaydiaCove NF", "CaskaydiaCove NFM", "Cascadia Code NF", "MesloLGS NF", "Cascadia Code", "Consolas", monospace',
     fontSize: 14,
     lineHeight: 1.2,
     cursorBlink: true,
     cursorStyle: 'block',
     allowTransparency: false,
     scrollback: 5000,
+    // 允許 xterm.js 在 macOS/Windows 上使用平台 IME
+    macOptionIsMeta: false,
   });
+
+  // ── unicode11 addon：讓 xterm.js 用 Unicode 11 寬度表
+  //    正確處理 Nerd Font private-use-area glyph（E000–F8FF）為 1 cell
+  const unicode11 = new Unicode11Addon.Unicode11Addon();
+  term.loadAddon(unicode11);
+  term.unicode.activeVersion = '11';
 
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
@@ -105,7 +116,6 @@ function switchTerminal(id) {
 
 function writeToTerminal(id, b64) {
   if (!terms[id]) return;
-  // decode base64 to binary string, then to Uint8Array
   const binary = atob(b64);
   const bytes  = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -124,22 +134,19 @@ function removeTerminal(id) {
   }
 }
 
-// Receive commands from C# via WebView2.PostWebMessageAsString
 window.chrome.webview.addEventListener('message', ev => {
   let msg;
   try { msg = JSON.parse(ev.data); } catch { return; }
   switch (msg.type) {
-    case 'create': createTerminal(msg.id);        break;
-    case 'switch': switchTerminal(msg.id);        break;
+    case 'create': createTerminal(msg.id);            break;
+    case 'switch': switchTerminal(msg.id);            break;
     case 'write':  writeToTerminal(msg.id, msg.data); break;
-    case 'remove': removeTerminal(msg.id);        break;
+    case 'remove': removeTerminal(msg.id);            break;
   }
 });
 
-// Notify C# that the page is ready
 window.chrome.webview.postMessage(JSON.stringify({ type: 'ready' }));
 
-// Resize all active terminals when window resizes
 window.addEventListener('resize', () => {
   if (activeId && terms[activeId]) terms[activeId].fit.fit();
 });
