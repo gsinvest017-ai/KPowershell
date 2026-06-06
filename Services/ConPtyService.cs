@@ -133,8 +133,9 @@ public sealed class ConPtyService : IDisposable
                 IntPtr.Zero, null, ref si, out _proc))
             throw new InvalidOperationException($"CreateProcess failed: {Marshal.GetLastWin32Error()}");
 
-        _inputStream  = new FileStream(_inputPipe,  FileAccess.Write, bufferSize: 1, isAsync: false);
-        _outputStream = new FileStream(_outputPipe, FileAccess.Read,  bufferSize: 1, isAsync: true);
+        // CreatePipe() 建立的匿名 pipe 不支援 Overlapped I/O，兩端都必須 isAsync:false
+        _inputStream  = new FileStream(_inputPipe,  FileAccess.Write, bufferSize: 1024, isAsync: false);
+        _outputStream = new FileStream(_outputPipe, FileAccess.Read,  bufferSize: 1024, isAsync: false);
 
         _cts = new CancellationTokenSource();
         _ = ReadLoopAsync(_cts.Token);
@@ -165,7 +166,8 @@ public sealed class ConPtyService : IDisposable
         {
             while (!ct.IsCancellationRequested)
             {
-                int n = await _outputStream!.ReadAsync(buf, 0, buf.Length, ct);
+                // 匿名 pipe 無 Overlapped I/O — 用 Task.Run 包同步 Read 避免阻塞 UI thread
+                int n = await Task.Run(() => _outputStream!.Read(buf, 0, buf.Length), ct);
                 if (n == 0) break;
                 OutputReceived?.Invoke(Convert.ToBase64String(buf, 0, n));
             }
