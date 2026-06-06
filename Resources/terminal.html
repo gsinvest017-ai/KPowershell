@@ -7,23 +7,10 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"/>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body {
-    width: 100%; height: 100%;
-    background: #1a1a1a;
-    overflow: hidden;
-  }
-  #wrap {
-    width: 100%; height: 100%;
-    position: relative;
-  }
-  .term-host {
-    position: absolute;
-    inset: 0;
-    display: none;
-  }
-  .term-host.active {
-    display: block;
-  }
+  html, body { width: 100%; height: 100%; background: #1a1a1a; overflow: hidden; }
+  #wrap { width: 100%; height: 100%; position: relative; }
+  .term-host { position: absolute; inset: 0; display: none; }
+  .term-host.active { display: block; }
   .xterm { width: 100%; height: 100%; }
   .xterm-viewport { overflow-y: hidden !important; }
 </style>
@@ -36,32 +23,45 @@
 <script>
 'use strict';
 
-// ── 全域 JS 錯誤上報給 C# (方便 debug) ──────────────────────────
+// ── 全域 JS 錯誤上報 ─────────────────────────────────────────────
 window.onerror = (msg, src, line) => {
-  try { window.chrome.webview.postMessage(JSON.stringify({ type: 'jserr', msg: String(msg), src, line })); } catch {}
-};
-window.onunhandledrejection = ev => {
-  try { window.chrome.webview.postMessage(JSON.stringify({ type: 'jserr', msg: String(ev.reason) })); } catch {}
+  try { window.chrome.webview.postMessage(JSON.stringify({ type:'jserr', msg:String(msg), src, line })); } catch{}
 };
 
 const terms   = {};
 let   activeId = null;
+let   _u11Loaded = false;   // unicode11 addon 是否已就緒
 
 const THEME = {
-  background:          '#1a1a1a',
-  foreground:          '#d4d4d4',
-  cursor:              '#d4a017',
-  cursorAccent:        '#1a1a1a',
-  selectionBackground: 'rgba(212,160,23,0.3)',
-  black:   '#1a1a1a', brightBlack:   '#555555',
-  red:     '#f44747', brightRed:     '#f44747',
-  green:   '#6a9955', brightGreen:   '#b5cea8',
-  yellow:  '#d7ba7d', brightYellow:  '#d7ba7d',
-  blue:    '#569cd6', brightBlue:    '#9cdcfe',
-  magenta: '#c586c0', brightMagenta: '#c586c0',
-  cyan:    '#4ec9b0', brightCyan:    '#4ec9b0',
-  white:   '#d4d4d4', brightWhite:   '#ffffff',
+  background:'#1a1a1a', foreground:'#d4d4d4',
+  cursor:'#d4a017', cursorAccent:'#1a1a1a',
+  selectionBackground:'rgba(212,160,23,0.3)',
+  black:'#1a1a1a',   brightBlack:'#555555',
+  red:'#f44747',     brightRed:'#f44747',
+  green:'#6a9955',   brightGreen:'#b5cea8',
+  yellow:'#d7ba7d',  brightYellow:'#d7ba7d',
+  blue:'#569cd6',    brightBlue:'#9cdcfe',
+  magenta:'#c586c0', brightMagenta:'#c586c0',
+  cyan:'#4ec9b0',    brightCyan:'#4ec9b0',
+  white:'#d4d4d4',   brightWhite:'#ffffff',
 };
+
+// ── 在頁面啟動時立即載入 unicode11 ──────────────────────────────
+// ready 訊號等 unicode11 成功或失敗後才發，確保第一批 prompt 輸出
+// 時寬度表已就緒，避免 Oh My Posh / Nerd Font glyph 造成游標偏移。
+(function loadUnicode11() {
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/xterm-addon-unicode11@0.8.0/lib/xterm-addon-unicode11.js';
+  script.onload  = () => { _u11Loaded = true;  sendReady(); };
+  script.onerror = () => { _u11Loaded = false; sendReady(); }; // 降級：沒有 addon 也能跑
+  document.head.appendChild(script);
+})();
+
+function sendReady() {
+  window.chrome.webview.postMessage(JSON.stringify({ type: 'ready' }));
+}
+
+// ─────────────────────────────────────────────────────────────────
 
 function createTerminal(id) {
   if (terms[id]) return;
@@ -73,7 +73,6 @@ function createTerminal(id) {
 
   const term = new Terminal({
     theme: THEME,
-    // CaskaydiaCove NF 包含完整 Nerd Font glyph（系統已安裝）
     fontFamily: '"CaskaydiaCove NF", "CaskaydiaCove NFM", "Cascadia Code", "Consolas", monospace',
     fontSize: 14,
     lineHeight: 1.2,
@@ -83,19 +82,14 @@ function createTerminal(id) {
     scrollback: 5000,
   });
 
-  // unicode11 addon — Nerd Font glyph 寬度修正（失敗時安全降級）
-  try {
-    const u11Script = document.createElement('script');
-    u11Script.src = 'https://cdn.jsdelivr.net/npm/xterm-addon-unicode11@0.8.0/lib/xterm-addon-unicode11.js';
-    u11Script.onload = () => {
-      try {
-        const u11 = new Unicode11Addon.Unicode11Addon();
-        term.loadAddon(u11);
-        term.unicode.activeVersion = '11';
-      } catch(e) {}
-    };
-    document.head.appendChild(u11Script);
-  } catch(e) {}
+  // unicode11: 修正 Nerd Font PUA glyph（E000-F8FF）寬度為 1-cell
+  if (_u11Loaded && typeof Unicode11Addon !== 'undefined') {
+    try {
+      const u11 = new Unicode11Addon.Unicode11Addon();
+      term.loadAddon(u11);
+      term.unicode.activeVersion = '11';
+    } catch(e) {}
+  }
 
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
@@ -103,11 +97,10 @@ function createTerminal(id) {
   fit.fit();
 
   term.onData(data => {
-    window.chrome.webview.postMessage(JSON.stringify({ type: 'input', id, data }));
+    window.chrome.webview.postMessage(JSON.stringify({ type:'input', id, data }));
   });
-
   term.onResize(({ cols, rows }) => {
-    window.chrome.webview.postMessage(JSON.stringify({ type: 'resize', id, cols, rows }));
+    window.chrome.webview.postMessage(JSON.stringify({ type:'resize', id, cols, rows }));
   });
 
   terms[id] = { term, fit, host };
@@ -115,9 +108,7 @@ function createTerminal(id) {
 }
 
 function switchTerminal(id) {
-  if (activeId && terms[activeId]) {
-    terms[activeId].host.classList.remove('active');
-  }
+  if (activeId && terms[activeId]) terms[activeId].host.classList.remove('active');
   activeId = id;
   if (terms[id]) {
     terms[id].host.classList.add('active');
@@ -157,7 +148,7 @@ window.chrome.webview.addEventListener('message', ev => {
   }
 });
 
-window.chrome.webview.postMessage(JSON.stringify({ type: 'ready' }));
+// !! 注意：不在這裡直接送 ready，改由 loadUnicode11() 的 onload/onerror 觸發 !!
 
 window.addEventListener('resize', () => {
   if (activeId && terms[activeId]) terms[activeId].fit.fit();
