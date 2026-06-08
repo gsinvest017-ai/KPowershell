@@ -16,6 +16,8 @@ public partial class MainWindow : Window
     private readonly MainViewModel _vm;
     private bool _webReady;
     private Action<string>? _applyColor;
+    // 等待 xterm.js 回報實際尺寸後才啟動 ConPTY，避免初始尺寸不符造成重複 redraw
+    private readonly HashSet<string> _pendingPaneSpawns = new();
 
     public MainWindow()
     {
@@ -86,7 +88,18 @@ public partial class MainWindow : Window
 
             case "resize":
                 if (msg.id is not null && msg.cols > 0 && msg.rows > 0)
-                    FindPty(msg.id)?.Resize((short)msg.cols, (short)msg.rows);
+                {
+                    if (_pendingPaneSpawns.Remove(msg.id))
+                    {
+                        // xterm.js 回報了實際尺寸 → 以正確初始大小啟動 ConPTY
+                        var pane = FindPaneById(msg.id);
+                        if (pane is not null) SpawnPtyForPane(pane, (short)msg.cols, (short)msg.rows);
+                    }
+                    else
+                    {
+                        FindPty(msg.id)?.Resize((short)msg.cols, (short)msg.rows);
+                    }
+                }
                 break;
 
             case "paneactive":
@@ -129,21 +142,22 @@ public partial class MainWindow : Window
     {
         if (!_webReady) return;
         var pane = tab.Panes[0];
+        _pendingPaneSpawns.Add(pane.Id);
         PostJs(new { type = "create", id = pane.Id });
-        SpawnPtyForPane(pane);
+        // ConPTY 延遲到 xterm.js 回報實際尺寸（resize 訊息）後才啟動
     }
 
     private void SpawnSplitPane(PsTab tab, PsPane pane)
     {
         if (!_webReady) return;
-        // 傳送完整的 pane ID 陣列給 JS，讓它知道最終佈局
+        _pendingPaneSpawns.Add(pane.Id);
         PostJs(new { type      = "split",
                      panes     = tab.PaneIds(),
                      direction = tab.SplitDir.ToString().ToLower() });
-        SpawnPtyForPane(pane);
+        // 同上，等 resize 再啟動
     }
 
-    private void SpawnPtyForPane(PsPane pane)
+    private void SpawnPtyForPane(PsPane pane, short cols = 80, short rows = 24)
     {
         var pty = new ConPtyService();
         var capturedId = pane.Id;
@@ -152,7 +166,7 @@ public partial class MainWindow : Window
                 TerminalWebView.CoreWebView2?.ExecuteScriptAsync(
                     $"writeToTerminal('{EscJs(capturedId)}', '{b64}');"));
 
-        try { pty.Start(); }
+        try { pty.Start(cols, rows); }
         catch (Exception ex)
         {
             PostJs(new { type = "write", id = capturedId,
@@ -398,6 +412,17 @@ public partial class MainWindow : Window
         {
             var pane = tab.Panes.FirstOrDefault(p => p.Id == id);
             if (pane is not null) return pane.Pty;
+        }
+        return null;
+    }
+
+    private PsPane? FindPaneById(string id)
+    {
+        foreach (var g in _vm.Groups)
+        foreach (var tab in g.Tabs)
+        {
+            var pane = tab.Panes.FirstOrDefault(p => p.Id == id);
+            if (pane is not null) return pane;
         }
         return null;
     }

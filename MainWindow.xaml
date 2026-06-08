@@ -227,7 +227,7 @@
         <!-- Terminal (WebView2) -->
         <wv2:WebView2 x:Name="TerminalWebView"
                       Grid.Row="1"
-                      DefaultBackgroundColor="#1A1A1A"/>
+                      DefaultBackgroundColor="#0C0C0C"/>
 
         <!-- ═══ Color Picker Popup ═══ -->
         <Popup x:Name="ColorPickerPopup"

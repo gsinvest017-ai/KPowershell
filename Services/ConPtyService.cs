@@ -92,6 +92,9 @@ public sealed class ConPtyService : IDisposable
         ["TERM_PROGRAM"]     = "KPowershell",
         ["TERM_PROGRAM_VERSION"] = "1.0",
         ["FORCE_COLOR"]      = "3",
+        // 讓 $PROFILE 中依賴 WT_SESSION 的判斷（如 matrix theme 啟用條件）能正確執行
+        ["WT_SESSION"]       = "9ec66b5c-3d03-4ca3-b72b-3b45c51a96a3",
+        ["WT_PROFILE_ID"]    = "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}",
     };
 
     #endregion

@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"/>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 100%; height: 100%; background: #1a1a1a; overflow: hidden; }
+  html, body { width: 100%; height: 100%; background: #0C0C0C; overflow: hidden; }
   #wrap { display: flex; width: 100%; height: 100%; }
   .term-host {
     display: none; flex-direction: column;
@@ -41,18 +41,19 @@ let _u11Loaded   = false;
 let _layoutPanes = [];   // 目前可見的 pane ID 陣列
 let _layoutDir   = 'none';
 
+// Windows Terminal "Campbell" 標準色盤，與 WT 預設渲染完全一致
 const THEME = {
-  background:'#1a1a1a', foreground:'#d4d4d4',
-  cursor:'#d4a017', cursorAccent:'#1a1a1a',
-  selectionBackground:'rgba(212,160,23,0.3)',
-  black:'#1a1a1a',   brightBlack:'#555555',
-  red:'#f44747',     brightRed:'#f44747',
-  green:'#6a9955',   brightGreen:'#b5cea8',
-  yellow:'#d7ba7d',  brightYellow:'#d7ba7d',
-  blue:'#569cd6',    brightBlue:'#9cdcfe',
-  magenta:'#c586c0', brightMagenta:'#c586c0',
-  cyan:'#4ec9b0',    brightCyan:'#4ec9b0',
-  white:'#d4d4d4',   brightWhite:'#ffffff',
+  background:'#0C0C0C', foreground:'#CCCCCC',
+  cursor:'#FFFFFF', cursorAccent:'#0C0C0C',
+  selectionBackground:'rgba(255,255,255,0.25)',
+  black:         '#0C0C0C',  brightBlack:   '#767676',
+  red:           '#C50F1F',  brightRed:     '#E74856',
+  green:         '#13A10E',  brightGreen:   '#16C60C',
+  yellow:        '#C19C00',  brightYellow:  '#F9F1A5',
+  blue:          '#0037DA',  brightBlue:    '#3B78FF',
+  magenta:       '#881798',  brightMagenta: '#B4009E',
+  cyan:          '#3A96DD',  brightCyan:    '#61D6D6',
+  white:         '#CCCCCC',  brightWhite:   '#F2F2F2',
 };
 
 // ── Unicode11（Nerd Font PUA 寬度修正）────────────────────────────
