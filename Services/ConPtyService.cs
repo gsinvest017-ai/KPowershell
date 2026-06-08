@@ -83,6 +83,17 @@ public sealed class ConPtyService : IDisposable
     private const uint CREATE_UNICODE_ENVIRONMENT  = 0x00000400;
     private static readonly IntPtr ATTR_PSEUDOCONSOLE = new(0x00020016);
 
+    // 終端機識別 env vars：讓 Oh My Posh / Starship / bat / ls-colors 等
+    // 工具能偵測到 true-color 支援，正確呈現 256 色 / 24-bit 顏色與 Nerd Font icon
+    private static readonly Dictionary<string, string> _termEnvOverrides = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["TERM"]             = "xterm-256color",
+        ["COLORTERM"]        = "truecolor",
+        ["TERM_PROGRAM"]     = "KPowershell",
+        ["TERM_PROGRAM_VERSION"] = "1.0",
+        ["FORCE_COLOR"]      = "3",
+    };
+
     #endregion
 
     private IntPtr _hPC = IntPtr.Zero;
@@ -128,10 +139,20 @@ public sealed class ConPtyService : IDisposable
         si.lpAttributeList = _attrList;
 
         string shell = FindShell();
-        if (!CreateProcess(null, shell, IntPtr.Zero, IntPtr.Zero, false,
-                EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-                IntPtr.Zero, null, ref si, out _proc))
-            throw new InvalidOperationException($"CreateProcess failed: {Marshal.GetLastWin32Error()}");
+        // 確保路徑含空格時也能正確解析（如 C:\Program Files\...）
+        string cmdLine = shell.Contains(' ') ? $"\"{shell}\"" : shell;
+        var envBlock = BuildEnvBlock();
+        try
+        {
+            if (!CreateProcess(null, cmdLine, IntPtr.Zero, IntPtr.Zero, false,
+                    EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                    envBlock, null, ref si, out _proc))
+                throw new InvalidOperationException($"CreateProcess failed: {Marshal.GetLastWin32Error()}");
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(envBlock);
+        }
 
         // CreatePipe() 建立的匿名 pipe 不支援 Overlapped I/O，兩端都必須 isAsync:false
         _inputStream  = new FileStream(_inputPipe,  FileAccess.Write, bufferSize: 1024, isAsync: false);
@@ -139,6 +160,27 @@ public sealed class ConPtyService : IDisposable
 
         _cts = new CancellationTokenSource();
         _ = ReadLoopAsync(_cts.Token);
+    }
+
+    /// <summary>
+    /// 繼承目前程序環境，並覆蓋終端機識別 vars（TERM / COLORTERM 等）。
+    /// 回傳 Marshal.AllocHGlobal 分配的 Unicode 環境區塊，呼叫方負責 FreeHGlobal。
+    /// </summary>
+    private static IntPtr BuildEnvBlock()
+    {
+        var vars = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (System.Collections.DictionaryEntry e in System.Environment.GetEnvironmentVariables())
+            vars[(string)e.Key] = (string?)e.Value ?? "";
+        foreach (var kv in _termEnvOverrides) vars[kv.Key] = kv.Value;
+
+        var sb = new StringBuilder();
+        foreach (var kv in vars) sb.Append(kv.Key).Append('=').Append(kv.Value).Append('\0');
+        sb.Append('\0');   // double-null terminator
+
+        var bytes = Encoding.Unicode.GetBytes(sb.ToString());
+        var ptr   = Marshal.AllocHGlobal(bytes.Length);
+        Marshal.Copy(bytes, 0, ptr, bytes.Length);
+        return ptr;
     }
 
     private static string FindShell()
