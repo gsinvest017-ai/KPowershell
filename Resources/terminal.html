@@ -240,6 +240,18 @@ window.chrome.webview.addEventListener('message', ev => {
       // 新 tab 第一次建立（單窗格）
       createTerminal(msg.id);
       setLayout([msg.id], 'none');
+      // fit.fit() 在 setLayout 的 rAF 內執行，但若計算出的尺寸恰好等於
+      // xterm.js 預設值（80×24），onResize 不會觸發，ConPTY 就永遠不會啟動。
+      // 用第二個 rAF 保底：fit 結束後把實際尺寸補送一次 resize 給 C#。
+      (function(id) {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          const t = terms[id];
+          if (!t) return;
+          window.chrome.webview.postMessage(JSON.stringify({
+            type: 'resize', id, cols: t.term.cols, rows: t.term.rows
+          }));
+        }));
+      })(msg.id);
       break;
 
     case 'switch':
@@ -266,6 +278,16 @@ window.chrome.webview.addEventListener('message', ev => {
         // 焦點給最後一個（新加入的）窗格
         const newId = msg.panes[msg.panes.length - 1];
         if (terms[newId]) terms[newId].term.focus();
+        // 同 create：保底送 resize，確保新分割窗格的 ConPTY 一定會啟動
+        (function(id) {
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            const t = terms[id];
+            if (!t) return;
+            window.chrome.webview.postMessage(JSON.stringify({
+              type: 'resize', id, cols: t.term.cols, rows: t.term.rows
+            }));
+          }));
+        })(newId);
       }
       break;
 
