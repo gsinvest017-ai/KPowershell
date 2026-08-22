@@ -1,3 +1,10 @@
+---
+type: progress
+updated: 2026-06-06
+repos: [KPowershell]
+owner: User
+---
+
 # PsTabGroups 進度日誌
 
 ## 目標

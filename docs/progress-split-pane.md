@@ -1,3 +1,10 @@
+---
+type: progress
+updated: 2026-06-06
+repos: [KPowershell]
+owner: User
+---
+
 # 進度：分割窗格 (Split Pane)
 
 ## 目標

@@ -1,3 +1,10 @@
+---
+type: progress
+updated: 2026-06-08
+repos: [KPowershell]
+owner: User
+---
+
 # 進度：Profile/Theme 修正 + N-pane 分割 + Tab 拖曳
 
 ## 目標
