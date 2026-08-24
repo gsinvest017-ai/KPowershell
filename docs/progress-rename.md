@@ -1,3 +1,10 @@
+---
+type: progress
+updated: 2026-06-06
+repos: [KPowershell]
+owner: User
+---
+
 # 進度：Group / Tab 雙擊重新命名
 
 ## 目標
